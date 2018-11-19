@@ -94,8 +94,16 @@ def optimize(nn_last_layer, correct_label, learning_rate, num_classes):
     :param num_classes: Number of classes to classify
     :return: Tuple of (logits, train_op, cross_entropy_loss)
     """
-    # TODO: Implement function
-    return None, None, None
+    logits = tf.reshape(nn_last_layer, (-1, num_classes))
+    correct_label = tf.reshape(correct_label, (-1, num_classes))
+
+    cross_entropy = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=correct_label)
+    reg_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
+    loss = tf.reduce_mean(cross_entropy)
+    loss = loss + sum(reg_losses)
+    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+    optimizer = optimizer.minimize(loss)
+    return logits, optimizer, loss
 
 
 tests.test_optimize(optimize)
@@ -116,8 +124,20 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
     :param keep_prob: TF Placeholder for dropout keep probability
     :param learning_rate: TF Placeholder for learning rate
     """
-    # TODO: Implement function
-    pass
+    keep_prob_value = .5
+    learning_rate_value = .1
+
+    sess.run(tf.global_variables_initializer())
+
+    for i in range(epochs):
+        print('Epoch:', i)
+        X, y = get_batches_fn(batch_size)
+
+        _, loss = sess.run([train_op, cross_entropy_loss],
+                           feed_dict={input_image: X, correct_label: y, keep_prob: keep_prob_value,
+                                      learning_rate: learning_rate_value})
+
+        print('Loss:', loss)
 
 
 tests.test_train_nn(train_nn)
@@ -125,6 +145,8 @@ tests.test_train_nn(train_nn)
 
 def run():
     num_classes = 2
+    n_epochs = 10
+    batch_size = 32
     image_shape = (160, 576)
     data_dir = './data'
     runs_dir = './runs'
@@ -146,14 +168,25 @@ def run():
         # OPTIONAL: Augment Images for better results
         #  https://datascience.stackexchange.com/questions/5224/how-to-prepare-augment-images-for-neural-network
 
-        # TODO: Build NN using load_vgg, layers, and optimize function
+        # Load encoder layers needed to build decoder
+        enc_input_layer, enc_keep_prob, enc_vgg_layer_3, enc_layer_4, enc_layer_7 = load_vgg(sess, vgg_path)
 
-        # TODO: Train NN using the train_nn function
+        # build decoder layers
+        nn_output = layers(enc_vgg_layer_3, enc_layer_4, enc_layer_7, num_classes)
 
-        # TODO: Save inference data using helper.save_inference_samples
-        #  helper.save_inference_samples(runs_dir, data_dir, sess, image_shape, logits, keep_prob, input_image)
+        # get optimizer, loss and logits tensors to perform training.
+        correct_label = tf.placeholder(tf.float32, [None, None, None, num_classes], name='correct_label')
+        learning_rate = tf.placeholder(tf.float32, name='learning_rate')
+        logits, optimizer, loss = optimize(nn_output, correct_label, learning_rate, num_classes)
 
-        # OPTIONAL: Apply the trained model to a video
+        # train nn
+        train_nn(sess, n_epochs, batch_size, get_batches_fn, optimizer, loss, enc_input_layer, correct_label,
+                 enc_keep_prob, learning_rate)
+
+        # save images
+        helper.save_inference_samples(runs_dir, data_dir, sess, image_shape, logits, enc_keep_prob, enc_input_layer)
+
+    # OPTIONAL: Apply the trained model to a video
 
 
 if __name__ == '__main__':
