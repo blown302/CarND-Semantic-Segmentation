@@ -6,9 +6,9 @@ import warnings
 from distutils.version import LooseVersion
 import project_tests as tests
 
-
 # Check TensorFlow Version
-assert LooseVersion(tf.__version__) >= LooseVersion('1.0'), 'Please use TensorFlow version 1.0 or newer.  You are using {}'.format(tf.__version__)
+assert LooseVersion(tf.__version__) >= LooseVersion(
+    '1.0'), 'Please use TensorFlow version 1.0 or newer.  You are using {}'.format(tf.__version__)
 print('TensorFlow Version: {}'.format(tf.__version__))
 
 # Check for a GPU
@@ -25,17 +25,33 @@ def load_vgg(sess, vgg_path):
     :param vgg_path: Path to vgg folder, containing "variables/" and "saved_model.pb"
     :return: Tuple of Tensors from VGG model (image_input, keep_prob, layer3_out, layer4_out, layer7_out)
     """
-    # TODO: Implement function
-    #   Use tf.saved_model.loader.load to load the model and weights
     vgg_tag = 'vgg16'
     vgg_input_tensor_name = 'image_input:0'
     vgg_keep_prob_tensor_name = 'keep_prob:0'
     vgg_layer3_out_tensor_name = 'layer3_out:0'
     vgg_layer4_out_tensor_name = 'layer4_out:0'
     vgg_layer7_out_tensor_name = 'layer7_out:0'
-    
-    return None, None, None, None, None
+    graph = tf.get_default_graph()
+    tf.saved_model.loader.load(sess, [vgg_tag], vgg_path)
+    input_layer = graph.get_tensor_by_name(vgg_input_tensor_name)
+    keep_prob = graph.get_tensor_by_name(vgg_keep_prob_tensor_name)
+    layer_3 = graph.get_tensor_by_name(vgg_layer3_out_tensor_name)
+    layer_4 = graph.get_tensor_by_name(vgg_layer4_out_tensor_name)
+    layer_7 = graph.get_tensor_by_name(vgg_layer7_out_tensor_name)
+    return input_layer, keep_prob, layer_3, layer_4, layer_7
+
+
 tests.test_load_vgg(load_vgg, tf)
+
+
+def create_1x1(input_layer, num_classes):
+    return tf.layers.conv2d(input_layer, num_classes, kernel_size=(1, 1), strides=(1, 1), padding='same',
+                            kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
+
+
+def create_upsampling_layer(input_layer, kernel_size, stride, n_classes):
+    return tf.layers.conv2d_transpose(input_layer, n_classes, kernel_size, stride, padding='same',
+                                      kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
 
 
 def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
@@ -48,7 +64,24 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
     :return: The Tensor for the last layer of output
     """
     # TODO: Implement function
-    return None
+    # 1x1 connections
+    # 1x1 layer before decoder
+    conv1x1 = create_1x1(vgg_layer7_out, num_classes)
+    # 1x1 to skip connections for layer 4
+    conv1x1_layer_4 = create_1x1(vgg_layer4_out, num_classes)
+    # 1x1 to skip connections for layer 3
+    conv1x1_layer_3 = create_1x1(vgg_layer3_out, num_classes)
+
+    output = create_upsampling_layer(conv1x1, 4, 2, num_classes)
+    tf.add(output, conv1x1_layer_4)
+
+    output = create_upsampling_layer(output, 4, 2, num_classes)
+    output = tf.add(output, conv1x1_layer_3)
+
+    output = create_upsampling_layer(output, 16, 8, num_classes)
+    return output
+
+
 tests.test_layers(layers)
 
 
@@ -63,6 +96,8 @@ def optimize(nn_last_layer, correct_label, learning_rate, num_classes):
     """
     # TODO: Implement function
     return None, None, None
+
+
 tests.test_optimize(optimize)
 
 
@@ -83,6 +118,8 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
     """
     # TODO: Implement function
     pass
+
+
 tests.test_train_nn(train_nn)
 
 
