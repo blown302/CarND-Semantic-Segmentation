@@ -46,11 +46,13 @@ tests.test_load_vgg(load_vgg, tf)
 
 def create_1x1(input_layer, num_classes):
     return tf.layers.conv2d(input_layer, num_classes, kernel_size=(1, 1), strides=(1, 1), padding='same',
+                            kernel_initializer=tf.truncated_normal_initializer(stddev=1e-2),
                             kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
 
 
 def create_upsampling_layer(input_layer, kernel_size, stride, n_classes):
     return tf.layers.conv2d_transpose(input_layer, n_classes, kernel_size, stride, padding='same',
+                                      kernel_initializer=tf.truncated_normal_initializer(stddev=1e-2),
                                       kernel_regularizer=tf.contrib.layers.l2_regularizer(1e-3))
 
 
@@ -63,7 +65,6 @@ def layers(vgg_layer3_out, vgg_layer4_out, vgg_layer7_out, num_classes):
     :param num_classes: Number of classes to classify
     :return: The Tensor for the last layer of output
     """
-    # TODO: Implement function
     # 1x1 connections
     # 1x1 layer before decoder
     conv1x1 = create_1x1(vgg_layer7_out, num_classes)
@@ -94,13 +95,14 @@ def optimize(nn_last_layer, correct_label, learning_rate, num_classes):
     :param num_classes: Number of classes to classify
     :return: Tuple of (logits, train_op, cross_entropy_loss)
     """
+    regularization_constant = 0.01
     logits = tf.reshape(nn_last_layer, (-1, num_classes))
     correct_label = tf.reshape(correct_label, (-1, num_classes))
 
-    cross_entropy = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=correct_label)
+    cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=correct_label)
     reg_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
     loss = tf.reduce_mean(cross_entropy)
-    loss = loss + sum(reg_losses)
+    loss = loss + regularization_constant * sum(reg_losses)
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
     optimizer = optimizer.minimize(loss)
     return logits, optimizer, loss
@@ -125,19 +127,16 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
     :param learning_rate: TF Placeholder for learning rate
     """
     keep_prob_value = .5
-    learning_rate_value = .1
-
+    learning_rate_value = .001
     sess.run(tf.global_variables_initializer())
-
     for i in range(epochs):
         print('Epoch:', i)
-        X, y = get_batches_fn(batch_size)
+        for X, y in get_batches_fn(batch_size):
+            _, loss = sess.run([train_op, cross_entropy_loss],
+                               feed_dict={input_image: X, correct_label: y, keep_prob: keep_prob_value,
+                                          learning_rate: learning_rate_value})
 
-        _, loss = sess.run([train_op, cross_entropy_loss],
-                           feed_dict={input_image: X, correct_label: y, keep_prob: keep_prob_value,
-                                      learning_rate: learning_rate_value})
-
-        print('Loss:', loss)
+            print('Loss', loss)
 
 
 tests.test_train_nn(train_nn)
@@ -145,19 +144,15 @@ tests.test_train_nn(train_nn)
 
 def run():
     num_classes = 2
-    n_epochs = 10
-    batch_size = 32
+    n_epochs = 20
+    batch_size = 8
     image_shape = (160, 576)
-    data_dir = './data'
+    data_dir = '/data'
     runs_dir = './runs'
     tests.test_for_kitti_dataset(data_dir)
 
     # Download pretrained vgg model
     helper.maybe_download_pretrained_vgg(data_dir)
-
-    # OPTIONAL: Train and Inference on the cityscapes dataset instead of the Kitti dataset.
-    # You'll need a GPU with at least 10 teraFLOPS to train on.
-    #  https://www.cityscapes-dataset.com/
 
     with tf.Session() as sess:
         # Path to vgg model
@@ -182,11 +177,8 @@ def run():
         # train nn
         train_nn(sess, n_epochs, batch_size, get_batches_fn, optimizer, loss, enc_input_layer, correct_label,
                  enc_keep_prob, learning_rate)
-
         # save images
         helper.save_inference_samples(runs_dir, data_dir, sess, image_shape, logits, enc_keep_prob, enc_input_layer)
-
-    # OPTIONAL: Apply the trained model to a video
 
 
 if __name__ == '__main__':
