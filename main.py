@@ -127,7 +127,7 @@ def train_nn(sess, epochs, batch_size, get_batches_fn, train_op, cross_entropy_l
     :param learning_rate: TF Placeholder for learning rate
     """
     keep_prob_value = .5
-    learning_rate_value = .001
+    learning_rate_value = .0001
     sess.run(tf.global_variables_initializer())
     for i in range(epochs):
         print('Epoch:', i)
